@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Available Sensors</title>
+    <ul>
+        {% for sensor in sensors %}
+            <li><a href="/sensor/{{ sensor }}">{{ sensor }}</a></li>
+        {% endfor %}
+    </ul>
+
+    <style>
+        .table-container {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            border: 1px solid black;
+            padding: 8px;
+            text-align: left;
+        }
+
+        thead th {
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+    <h1>Soil Moisture Data</h1>
+
+    <!-- Uploading -->
+    <h2>Upload Soil Moisture Data</h2>
+    <form action="/upload_moisture" method="POST" enctype="multipart/form-data">
+        <input type="file" name="moisture_file" accept=".csv" required>
+        <button type="submit">Upload Soil Moisture CSV</button>
+    </form>
+
+    <h2>Upload Soil Nutrient Data</h2>
+    <form action="/upload_nutrients" method="POST" enctype="multipart/form-data">
+        <input type="file" name="nutrient_file" accept=".csv" required>
+        <button type="submit">Upload Soil Nutrient CSV</button>
+    </form>
+    <h2>Recent Moisture Data</h2>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Sensor ID</th>
+                    <th>Moisture Level (%)</th>
+                    <th>Timestamp</th>
+                    <th>Watering</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in moisture_data.itertuples() %}
+                <tr>
+                    <td>{{ row.sensor_id }}</td>
+                    <td>{{ row.moisture_level }}</td>
+                    <td>{{ row.timestamp }}</td>
+                    <td>{{ row.watering }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <h2>Recent Soil Nutrient Data</h2>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Sensor ID</th>
+                    <th>Timestamp</th>
+                    <th>Nitrogen (%)</th>
+                    <th>Phosphorus (%)</th>
+                    <th>Potassium (%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in nutrient_data.iterrows() %}
+                <tr>
+                    <td>{{ row[1].sensor_id }}</td>
+                    <td>{{ row[1].timestamp }}</td>
+                    <td>{{ row[1].nitrogen }}</td>
+                    <td>{{ row[1].phosphorus }}</td>
+                    <td>{{ row[1].potassium }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
