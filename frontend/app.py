@@ -6,6 +6,9 @@ import plotly.graph_objects as go
 import os
 from backend.moisture_database import moisture_insert_data, moisture_import_from_csv
 from backend.nutrients_database import nutrient_insert_data, nutrient_import_from_csv
+from scripts.weather import fetch_weather_data
+from datetime import datetime, timedelta
+from scripts.prediction import predict_moisture
 
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
@@ -57,15 +60,17 @@ def index():
 
 @app.route("/sensor/<sensor_id>")
 def sensor(sensor_id):
+    # moisture
     moisture_data = fetch_moisture_data(sensor_id)
     moisture_data['timestamp'] = pd.to_datetime(moisture_data['timestamp'])
     moisture_data = moisture_data.sort_values(by='timestamp')
+    moisture_graph = get_moisture_graph(sensor_id, moisture_data, 40)
+    moisture_graph = moisture_graph.to_html(full_html=False)
+
+    # nutrients
     nutrient_data = fetch_nutrient_data(sensor_id)
     nutrient_data['timestamp'] = pd.to_datetime(nutrient_data['timestamp'])
     nutrient_data = nutrient_data.sort_values(by='timestamp')
-
-    moisture_graph = get_moisture_graph(sensor_id, moisture_data, 40)
-    moisture_graph = moisture_graph.to_html(full_html=False)
     nutrient_graph = get_nutrient_graph(sensor_id, nutrient_data)
     nutrient_graph = nutrient_graph.to_html(full_html=False)
 
@@ -110,17 +115,37 @@ def update_graph():
 #moisture graph
 def get_moisture_graph(sensor_id, moisture_data, moisture_goal):
     moisture_fig = go.Figure()
+    # weather
+    weather_start_date = moisture_data["timestamp"].min().strftime("%Y-%m-%d")
+    weather_end_date = (moisture_data["timestamp"].max() + timedelta(days=7)).strftime("%Y-%m-%d")
+    latitude, longitude = 40.7, -74.0
+    weather_data = fetch_weather_data(latitude, longitude, weather_start_date, weather_end_date)
     moisture_fig.add_trace(go.Scatter(
-        x=moisture_data['timestamp'],
-        y=moisture_data['moisture_level'],
+        x=weather_data['timestamp'],
+        y=weather_data['temperature_f'],
         mode='lines+markers',
-        name='Moisture Level',
-        line=dict(color='green')
+        name='temperature (F)',
+        line=dict(color='coral')
     ))
+    moisture_fig.add_trace(go.Scatter(
+        x=weather_data['timestamp'],
+        y=weather_data['precipitation'],
+        mode='lines+markers',
+        name='precipitation',
+        line=dict(color='blue')
+    ))
+    moisture_fig.add_trace(go.Scatter(
+        x=weather_data['timestamp'],
+        y=weather_data['humidity'],
+        mode='lines+markers',
+        name='humidity',
+        line=dict(color='lightblue')
+    ))
+    # base moisture
     moisture_fig.add_shape(
         type="line",
         x0=moisture_data['timestamp'].min(),
-        x1=moisture_data['timestamp'].max(),
+        x1=(moisture_data["timestamp"].max() + timedelta(days=8)).strftime("%Y-%m-%d"),
         y0=moisture_goal,
         y1=moisture_goal,
         line=dict(color="gray", width=2, dash="dash"),
@@ -148,6 +173,56 @@ def get_moisture_graph(sensor_id, moisture_data, moisture_goal):
                 layer="below",
                 line_width=0
             )
+    moisture_fig.add_trace(go.Scatter(
+        x=moisture_data['timestamp'],
+        y=moisture_data['moisture_level'],
+        mode='lines+markers',
+        name='Moisture Level',
+        line=dict(color='green')
+    ))
+    #prediction
+    moisture_fig.add_shape(
+        type="line",
+        x0=moisture_data["timestamp"].max(),
+        x1=moisture_data["timestamp"].max(),
+        y0=0,
+        y1=100,
+        line=dict(color="blue", width=2, dash="dash")
+    )
+    moisture_fig.add_annotation(
+        x=moisture_data["timestamp"].max(),
+        y=100,
+        text="Prediction line",
+        font=dict(color="blue", size=12)
+    )
+    predicted_moisture_levels, predicted_watering_days = predict_moisture(moisture_data, moisture_goal)
+    start_timestamp = moisture_data["timestamp"].max().strftime("%Y-%m-%d")
+    future_timestamps = pd.date_range(start=start_timestamp, periods=9, freq='D')
+    moisture_fig.add_trace(go.Scatter(
+        x=future_timestamps,
+        y=predicted_moisture_levels,
+        mode='lines+markers',
+        name='Future Predicted Moisture',
+        line=dict(color='orange')
+    ))
+    start_date = datetime(2025, 3, 12)
+    for i in range(len(predicted_watering_days) - 1):
+        if predicted_watering_days[i] == "1":
+            moisture_fig.add_shape(
+                type="rect",
+                x0=start_date + timedelta(days=i),
+                x1=start_date + timedelta(days=i+1),
+                y0=0,
+                y1=1,
+                xref="x",
+                yref="paper",
+                fillcolor="rgba(0, 100, 255, 0.2)",
+                opacity=0.4,
+                layer="below",
+                line_width=0
+            )
+
+    #final
     moisture_fig.update_layout(
         title=f"Soil Moisture for Sensor {sensor_id}",
         xaxis_title="Time",
