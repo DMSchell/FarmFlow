@@ -10,16 +10,17 @@ def init_nutrient_db():
                         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                         nitrogen REAL,
                         phosphorus REAL,
-                        potassium REAL
+                        potassium REAL,
+                        fertilized TEXT
                     )''')
     conn.commit()
     conn.close()
 
-def nutrient_insert_data(sensor_id, timestamp, nitrogen, phosphorus, potassium):
+def nutrient_insert_data(sensor_id, timestamp, nitrogen, phosphorus, potassium, fertilized):
     conn = sqlite3.connect("soil_nutrients.db")
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO nutrient_data (sensor_id, timestamp, nitrogen, phosphorus, potassium) VALUES (?, ?, ?, ?, ?)", 
-        (sensor_id, timestamp, nitrogen, phosphorus, potassium))
+    cursor.execute("INSERT INTO nutrient_data (sensor_id, timestamp, nitrogen, phosphorus, potassium, fertilized) VALUES (?, ?, ?, ?, ?, ?)", 
+        (sensor_id, timestamp, nitrogen, phosphorus, potassium, fertilized))
     conn.commit()
     conn.close()
 

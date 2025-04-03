@@ -4,11 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FarmFlow</title>
-    <ul>
-        {% for sensor in sensors %}
-            <li><a href="/sensor/{{ sensor }}">{{ sensor }}</a></li>
-        {% endfor %}
-    </ul>
 
     <style>
         .table-container {
@@ -34,13 +29,70 @@
             background: white;
             z-index: 1;
         }
+        .title {
+            font-family: 'Poppins', sans-serif;
+            font-weight: 800;
+            font-size: 3rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #505050;
+            text-align: center;
+        }
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: pointer;
+            font-size: 1.2rem;
+            color: #3498db; /* Blue color for visibility */
+        }
+
+        .tooltip .tooltip-text {
+            visibility: hidden;
+            width: 200px;
+            background-color: #2C3E50; /* Dark background for contrast */
+            color: #fff;
+            text-align: center;
+            padding: 8px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+
+            position: absolute;
+            z-index: 1;
+            left: 120%; /* Shift to the right */
+            top: 50%;
+            transform: translateY(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&display=swap');
     </style>
 </head>
 <body>
-    <h1>Soil Moisture Data</h1>
+    <h1 class="title">- FarmFlow -</h1>
+
+    <h2>
+        Available data sets
+        <span class="tooltip">❓
+            <span class="tooltip-text">Links to data analyzation and prediction will appear here when data is inputted</span>
+        </span>
+    </h2>
+    <ul>
+        {% for sensor in sensors %}
+            <li><a href="/sensor/{{ sensor }}">{{ sensor }}</a></li>
+        {% endfor %}
+    </ul>
 
     <!-- Uploading -->
-    <h2>Upload Soil Moisture Data</h2>
+    <h2>Upload Soil Moisture Data
+        <span class="tooltip">❓
+            <span class="tooltip-text">Input csv files containing moisture and nutrient data here. Examples are given in submission.</span>
+        </span>
+    </h2>
     <form action="/upload_moisture" method="POST" enctype="multipart/form-data">
         <input type="file" name="moisture_file" accept=".csv" required>
         <button type="submit">Upload Soil Moisture CSV</button>
@@ -57,8 +109,8 @@
             <thead>
                 <tr>
                     <th>Sensor ID</th>
-                    <th>Moisture Level (%)</th>
                     <th>Timestamp</th>
+                    <th>Moisture Level (%)</th>
                     <th>Watering</th>
                 </tr>
             </thead>
@@ -66,8 +118,8 @@
                 {% for row in moisture_data.itertuples() %}
                 <tr>
                     <td>{{ row.sensor_id }}</td>
-                    <td>{{ row.moisture_level }}</td>
                     <td>{{ row.timestamp }}</td>
+                    <td>{{ row.moisture_level }}</td>
                     <td>{{ row.watering }}</td>
                 </tr>
                 {% endfor %}
@@ -81,9 +133,10 @@
                 <tr>
                     <th>Sensor ID</th>
                     <th>Timestamp</th>
-                    <th>Nitrogen (%)</th>
-                    <th>Phosphorus (%)</th>
-                    <th>Potassium (%)</th>
+                    <th>Nitrogen (ppm)</th>
+                    <th>Phosphorus (ppm)</th>
+                    <th>Potassium (ppm)</th>
+                    <th>Fertilized</th>
                 </tr>
             </thead>
             <tbody>
@@ -94,10 +147,12 @@
                     <td>{{ row[1].nitrogen }}</td>
                     <td>{{ row[1].phosphorus }}</td>
                     <td>{{ row[1].potassium }}</td>
+                    <td>{{ row[1].fertilized }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+    <h4>Submission for 2025 NJTSA competition, Team #2901-1</h4>
 </body>
 </html>

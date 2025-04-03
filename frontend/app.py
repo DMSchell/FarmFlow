@@ -8,7 +8,7 @@ from backend.moisture_database import moisture_insert_data, moisture_import_from
 from backend.nutrients_database import nutrient_insert_data, nutrient_import_from_csv
 from scripts.weather import fetch_weather_data
 from datetime import datetime, timedelta
-from scripts.prediction import predict_moisture
+from scripts.prediction import predict_moisture, predict_nutrients
 
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
@@ -25,7 +25,7 @@ def fetch_moisture_data(sensor_id=None):
     return df
 def fetch_nutrient_data(sensor_id=None):
     conn = sqlite3.connect("soil_nutrients.db")
-    query = "SELECT sensor_id, timestamp, nitrogen, phosphorus, potassium FROM nutrient_data"
+    query = "SELECT sensor_id, timestamp, nitrogen, phosphorus, potassium, fertilized FROM nutrient_data"
     if sensor_id:
         query += f" WHERE sensor_id = '{sensor_id}'"
     query += " ORDER BY sensor_id ASC, timestamp DESC"
@@ -53,7 +53,6 @@ def index():
     moisture_data = fetch_moisture_data()
     nutrient_data = fetch_nutrient_data()
     
-    # error may occur if moisture and nutrient data have differently named sensors; figure out later
     sensors = moisture_data['sensor_id'].unique()
 
     return render_template("index.html", moisture_data=moisture_data, nutrient_data=nutrient_data, sensors=sensors)
@@ -71,7 +70,7 @@ def sensor(sensor_id):
     nutrient_data = fetch_nutrient_data(sensor_id)
     nutrient_data['timestamp'] = pd.to_datetime(nutrient_data['timestamp'])
     nutrient_data = nutrient_data.sort_values(by='timestamp')
-    nutrient_graph = get_nutrient_graph(sensor_id, nutrient_data)
+    nutrient_graph = get_nutrient_graph(sensor_id, nutrient_data, 50, 15, 150)
     nutrient_graph = nutrient_graph.to_html(full_html=False)
 
     return render_template("sensor.html", moisture_data=moisture_data, moisture_graph=moisture_graph, nutrient_data=nutrient_data, nutrient_graph=nutrient_graph, sensor_id=sensor_id)
@@ -94,8 +93,8 @@ def upload_nutrients():
         nutrient_import_from_csv(file_path)
     return redirect("/")
 
-@app.route("/update_graph", methods=["POST"])
-def update_graph():
+@app.route("/update_moisture_graph", methods=["POST"])
+def update_moisture_graph():
     sensor_id = request.form.get("sensor_id")
     moisture_goal = request.form.get("goal")
 
@@ -112,6 +111,30 @@ def update_graph():
     moisture_graph = pio.to_json(moisture_graph)
     return moisture_graph
 
+@app.route("/update_nutrient_graph", methods=["POST"])
+def update_nutrient_graph():
+    sensor_id = request.form.get("sensor_id")
+    nitrogen_goal = request.form.get("nitrogen_goal")
+    phosphorus_goal = request.form.get("phosphorus_goal")
+    potassium_goal = request.form.get("potassium_goal")
+
+    try:
+        nitrogen_goal = float(nitrogen_goal)
+        phosphorus_goal = float(phosphorus_goal)
+        potassium_goal = float(potassium_goal)
+    except ValueError:
+        return "Invalid goal", 400
+    
+    nutrient_data = fetch_nutrient_data(sensor_id)
+    nutrient_data['timestamp'] = pd.to_datetime(nutrient_data['timestamp'])
+    nutrient_data = nutrient_data.sort_values(by='timestamp')
+
+    nutrient_graph = get_nutrient_graph(sensor_id, nutrient_data, nitrogen_goal, phosphorus_goal, potassium_goal)
+    nutrient_graph = pio.to_json(nutrient_graph)
+    return nutrient_graph
+    
+
+
 #moisture graph
 def get_moisture_graph(sensor_id, moisture_data, moisture_goal):
     moisture_fig = go.Figure()
@@ -125,7 +148,7 @@ def get_moisture_graph(sensor_id, moisture_data, moisture_goal):
         y=weather_data['temperature_f'],
         mode='lines+markers',
         name='temperature (F)',
-        line=dict(color='coral')
+        line=dict(color='lightblue')
     ))
     moisture_fig.add_trace(go.Scatter(
         x=weather_data['timestamp'],
@@ -139,7 +162,7 @@ def get_moisture_graph(sensor_id, moisture_data, moisture_goal):
         y=weather_data['humidity'],
         mode='lines+markers',
         name='humidity',
-        line=dict(color='lightblue')
+        line=dict(color='snow')
     ))
     # base moisture
     moisture_fig.add_shape(
@@ -153,7 +176,7 @@ def get_moisture_graph(sensor_id, moisture_data, moisture_goal):
     moisture_fig.add_annotation(
         x=moisture_data['timestamp'].min(),
         y=moisture_goal,
-        text="Moisture Goal (40%)",
+        text="Moisture Goal ("+str(moisture_goal)+"%)",
         showarrow=False,
         xanchor="right",
         font=dict(color="gray", size=12)
@@ -162,8 +185,8 @@ def get_moisture_graph(sensor_id, moisture_data, moisture_goal):
         if moisture_data.iloc[i]['watering'] == "1":
             moisture_fig.add_shape(
                 type="rect",
-                x0=moisture_data.iloc[i]['timestamp'],
-                x1=moisture_data.iloc[i + 1]['timestamp'],
+                x0=moisture_data.iloc[i - 1]['timestamp'],
+                x1=moisture_data.iloc[i]['timestamp'],
                 y0=0,
                 y1=1,
                 xref="x",
@@ -233,9 +256,36 @@ def get_moisture_graph(sensor_id, moisture_data, moisture_goal):
     return moisture_fig
 
 #nutrient graph
-def get_nutrient_graph(sensor_id, nutrient_data):
-
+def get_nutrient_graph(sensor_id, nutrient_data, nitrogen_goal, phosphorus_goal, potassium_goal):
     nutrient_fig = go.Figure()
+    #fertilizing
+    for i in range(len(nutrient_data) - 1):
+        if nutrient_data.iloc[i]['fertilized'] == "1":
+            nutrient_fig.add_shape(
+                type="line",
+                x0=nutrient_data.iloc[i-1]['timestamp'],
+                x1=nutrient_data.iloc[i-1]['timestamp'],
+                y0=0,
+                y1=175,
+                line=dict(color="green", width=2, dash="dash")
+            )
+    #nitrogen
+    nutrient_fig.add_shape(
+        type="line",
+        x0=nutrient_data['timestamp'].min(),
+        x1=(nutrient_data["timestamp"].max() + timedelta(days=8)).strftime("%Y-%m-%d"),
+        y0=nitrogen_goal,
+        y1=nitrogen_goal,
+        line=dict(color="blue", width=2, dash="dash"),
+    )
+    nutrient_fig.add_annotation(
+        x=nutrient_data['timestamp'].min(),
+        y=nitrogen_goal,
+        text="Nitrogen Goal ("+str(nitrogen_goal)+" ppm)",
+        showarrow=False,
+        xanchor="right",
+        font=dict(color="blue", size=12)
+    )
     nutrient_fig.add_trace(go.Scatter(
         x=nutrient_data['timestamp'],
         y=nutrient_data['nitrogen'],
@@ -243,6 +293,23 @@ def get_nutrient_graph(sensor_id, nutrient_data):
         name='Nitrogen (N)',
         line=dict(color='blue')
     ))
+    #phosphorus
+    nutrient_fig.add_shape(
+        type="line",
+        x0=nutrient_data['timestamp'].min(),
+        x1=(nutrient_data["timestamp"].max() + timedelta(days=8)).strftime("%Y-%m-%d"),
+        y0=phosphorus_goal,
+        y1=phosphorus_goal,
+        line=dict(color="orange", width=2, dash="dash"),
+    )
+    nutrient_fig.add_annotation(
+        x=nutrient_data['timestamp'].min(),
+        y=phosphorus_goal,
+        text="phosphorus Goal ("+str(phosphorus_goal)+" ppm)",
+        showarrow=False,
+        xanchor="right",
+        font=dict(color="orange", size=12)
+    )
     nutrient_fig.add_trace(go.Scatter(
         x=nutrient_data['timestamp'],
         y=nutrient_data['phosphorus'],
@@ -250,6 +317,23 @@ def get_nutrient_graph(sensor_id, nutrient_data):
         name='Phosphorus (P)',
         line=dict(color='orange')
     ))
+    #potassium
+    nutrient_fig.add_shape(
+        type="line",
+        x0=nutrient_data['timestamp'].min(),
+        x1=(nutrient_data["timestamp"].max() + timedelta(days=8)).strftime("%Y-%m-%d"),
+        y0=potassium_goal,
+        y1=potassium_goal,
+        line=dict(color="red", width=2, dash="dash"),
+    )
+    nutrient_fig.add_annotation(
+        x=nutrient_data['timestamp'].min(),
+        y=potassium_goal,
+        text="Potassium Goal ("+str(potassium_goal)+" ppm)",
+        showarrow=False,
+        xanchor="right",
+        font=dict(color="red", size=12)
+    )
     nutrient_fig.add_trace(go.Scatter(
         x=nutrient_data['timestamp'],
         y=nutrient_data['potassium'],
@@ -257,6 +341,58 @@ def get_nutrient_graph(sensor_id, nutrient_data):
         name='Potassium (K)',
         line=dict(color='red')
     ))
+    #prediction
+    predicted_nitrogen_levels, predicted_phosphorus_levels, predicted_potassium_levels, predicted_fertilizing_days = predict_nutrients(nutrient_data, nitrogen_goal, phosphorus_goal, potassium_goal)
+    start_timestamp = nutrient_data["timestamp"].max().strftime("%Y-%m-%d")
+    future_timestamps = pd.date_range(start=start_timestamp, periods=9, freq='D')
+
+    start_date = datetime(2025, 3, 12)
+    for i in range(len(predicted_fertilizing_days) - 1):
+        if predicted_fertilizing_days[i] == "1":
+            nutrient_fig.add_shape(
+                type="line",
+                x0=start_date + timedelta(days=i),
+                x1=start_date + timedelta(days=i),
+                y0=0,
+                y1=175,
+                line=dict(color="green", width=2, dash="dash")
+            )
+    nutrient_fig.add_trace(go.Scatter(
+        x=future_timestamps,
+        y=predicted_nitrogen_levels,
+        mode='lines+markers',
+        name='Future Predicted Moisture',
+        line=dict(color='cyan')
+    ))
+    nutrient_fig.add_trace(go.Scatter(
+        x=future_timestamps,
+        y=predicted_phosphorus_levels,
+        mode='lines+markers',
+        name='Future Predicted Moisture',
+        line=dict(color='coral')
+    ))
+    nutrient_fig.add_trace(go.Scatter(
+        x=future_timestamps,
+        y=predicted_potassium_levels,
+        mode='lines+markers',
+        name='Future Predicted Moisture',
+        line=dict(color='pink')
+    ))
+    nutrient_fig.add_shape(
+        type="line",
+        x0=nutrient_data["timestamp"].max(),
+        x1=nutrient_data["timestamp"].max(),
+        y0=0,
+        y1=175,
+        line=dict(color="gray", width=2, dash="dash")
+    )
+    nutrient_fig.add_annotation(
+        x=nutrient_data["timestamp"].max(),
+        y=175,
+        text="Prediction line",
+        font=dict(color="gray", size=12)
+    )
+    #final
     nutrient_fig.update_layout(
         title=f"Soil Nutrient Content for Sensor {sensor_id}",
         xaxis_title="Time",

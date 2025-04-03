@@ -3,8 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sensor Data</title>
+    <title>FarmFlow Data</title>
     <style>
+        .tables-wrapper {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
         .table-container {
             max-height: 300px;
             overflow-y: auto;
@@ -28,34 +34,111 @@
             background: white;
             z-index: 1;
         }
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: pointer;
+            font-size: 1.2rem;
+            color: #3498db; /* Blue color for visibility */
+        }
+
+        .tooltip .tooltip-text {
+            visibility: hidden;
+            width: 200px;
+            background-color: #2C3E50; /* Dark background for contrast */
+            color: #fff;
+            text-align: center;
+            padding: 8px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+
+            position: absolute;
+            z-index: 1;
+            left: 120%; /* Shift to the right */
+            top: 50%;
+            transform: translateY(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
-    <h1>Sensor Data for Sensor {{ sensor_id }}</h1>
+    <h1>Sensor Data for {{ sensor_id }}
+        <span class="tooltip">❓
+            <span class="tooltip-text">After the prediction line, data is predicted. Follow the watering/fertilizing cycle shown after the line in order to keep your fields as fresh and healthy as possible</span>
+        </span>
+    </h1>
 
-    <h2>Moisture Levels Over Time</h2>
+    <h2>Moisture Levels Over Time
+        <span class="tooltip">❓
+            <span class="tooltip-text">The areas shaded in blue are days that the fields have been irrigated</span>
+        </span>
+    </h2>
     
     <label for="moisture-goal">Adjust Moisture Goal (%):</label>
     <input type="number" id="moisture-goal" min="0" max="100" step="1" value="40" 
-    onkeypress="handleGoalKeyPress(event)">
+    onkeypress="handleGoalKeyPressMoisture(event)">
 
-    <div id="moisture-graph">{{ moisture_graph | safe }}</div> <!-- Graph goes here -->
+    <div id="moisture-graph">{{ moisture_graph | safe }}</div>
+
+    <h2>Soil Nutrient Content Over Time
+        <span class="tooltip">❓
+            <span class="tooltip-text">The green dotted lines are where the fields have been fertilized</span>
+        </span>
+    </h2>
+
+    <label for="nitrogen-goal">Adjust Nitrogen Goal (ppm):</label>
+    <input type="number" id="nitrogen-goal" step="1" value="50" 
+    onkeypress="handleGoalKeyPressNutrients(event)">
+    <label for="phosphorus-goal">Adjust Phosphorus Goal (ppm):</label>
+    <input type="number" id="phosphorus-goal" step="1" value="15" 
+    onkeypress="handleGoalKeyPressNutrients(event)">
+    <label for="potassium-goal">Adjust Potassium Goal (ppm):</label>
+    <input type="number" id="potassium-goal" step="1" value="150" 
+    onkeypress="handleGoalKeyPressNutrients(event)">
+
+    <div>{{ nutrient_graph | safe }}</div>
 
     <script>
-        function handleGoalKeyPress(event) {
+        function handleGoalKeyPressNutrients(event) {
+            if (event.key === "Enter") {
+                let newNitrogenGoal = Number(document.getElementById("nitrogen-goal").value);
+                let newPhosphorusGoal = Number(document.getElementById("phosphorus-goal").value);
+                let newPotassiumGoal = Number(document.getElementById("potassium-goal").value);
+                update_nutrient_graph(newNitrogenGoal, newPhosphorusGoal, newPotassiumGoal);
+            }
+        }
+        function handleGoalKeyPressMoisture(event) {
             if (event.key === "Enter") {
                 let newGoal = Number(document.getElementById("moisture-goal").value);
-                update_graph(newGoal);
+                update_moisture_graph(newGoal);
             }
         }
 
-        function update_graph(newGoal) {
-            fetch(`/update_graph`, {
+        function update_moisture_graph(newGoal) {
+            fetch(`/update_moisture_graph`, {
                 method: "POST",
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
                 body: `sensor_id={{ sensor_id }}&goal=${newGoal}`
             })
-            .then(response => response.json())  // Receive JSON data
+            .then(response => response.json())
+            .then(data => {
+                Plotly.react('moisture-graph', data.data, data.layout);
+            })
+            .catch(error => console.error('Error fetching graph data:', error));
+        }
+        function update_nutrient_graph(newNitrogenGoal, newPhosphorusGoal, newPotassiumGoal) {
+            fetch(`/update_nutrient_graph`, {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: `sensor_id={{ sensor_id }}&nitrogen_goal=${newNitrogenGoal}&phosphorus_goal=${newPhosphorusGoal}&potassium_goal=${newPotassiumGoal}`
+            })
+            .then(response => response.json())
             .then(data => {
                 Plotly.react('moisture-graph', data.data, data.layout);
             })
@@ -63,53 +146,54 @@
         }
     </script>
 
-    <h3>Recent Moisture Data</h3>
-    <div class="table-container">
-        <table border="1">
-            <thead>
-                <tr>
-                    <th>Timestamp</th>
-                    <th>Moisture (%)</th>
-                    <th>Watering</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in moisture_data.iterrows() %}
-                <tr>
-                    <td>{{ row[1].timestamp }}</td>
-                    <td>{{ row[1].moisture_level }}</td>
-                    <td>{{ row[1].watering }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <h2>Soil Nutrient Content Over Time</h2>
-    <div>{{ nutrient_graph | safe }}</div>  <!-- Display the nutrient content graph here -->
-
-    <h3>Recent Soil Nutrient Data</h3>
-    <div class="table-container">
-        <table border="1">
-            <thead>
-                <tr>
-                    <th>Timestamp</th>
-                    <th>Nitrogen (%)</th>
-                    <th>Phosphorus (%)</th>
-                    <th>Potassium (%)</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in nutrient_data.iterrows() %}
-                <tr>
-                    <td>{{ row[1].timestamp }}</td>
-                    <td>{{ row[1].nitrogen }}</td>
-                    <td>{{ row[1].phosphorus }}</td>
-                    <td>{{ row[1].potassium }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="tables-wrapper">
+        <div class="table-container">
+            <h3>Recent Moisture Data</h3>
+            <table border="1">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Moisture (%)</th>
+                        <th>Watering</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in moisture_data.iterrows() %}
+                    <tr>
+                        <td>{{ row[1].timestamp }}</td>
+                        <td>{{ row[1].moisture_level }}</td>
+                        <td>{{ row[1].watering }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="table-container">
+            <h3>Recent Soil Nutrient Data</h3>
+            <table border="1">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Nitrogen (ppm)</th>
+                        <th>Phosphorus (ppm)</th>
+                        <th>Potassium (ppm)</th>
+                        <th>Fertilized</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in nutrient_data.iterrows() %}
+                    <tr>
+                        <td>{{ row[1].timestamp }}</td>
+                        <td>{{ row[1].nitrogen }}</td>
+                        <td>{{ row[1].phosphorus }}</td>
+                        <td>{{ row[1].potassium }}</td>
+                        <td>{{ row[1].fertilized }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
     <a href="/">Back to Home</a>
 </body>
